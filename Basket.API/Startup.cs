@@ -14,6 +14,10 @@ using Basket.API.Repository;
 using Basket.API.Data.Interface;
 using Basket.API.Data;
 using Microsoft.OpenApi.Models;
+using EventBusRabbitMQ;
+using RabbitMQ.Client;
+using AutoMapper;
+using EventBusRabbitMQ.Producer;
 
 namespace Basket.API
 {
@@ -36,32 +40,51 @@ namespace Basket.API
             services.AddControllers();
             services.AddTransient<IBasketContext, BasketContext>();
             services.AddTransient<IBasketRepository, BasketRepository>();
+         
+            services.AddAutoMapper(typeof(Startup));
+            services.AddSingleton<IRabbitMQConnection>(sp =>
+            {
+                var factory = new ConnectionFactory()
+                {
+                    HostName=Configuration["EventBus:HostName"]
+                };
+                if (!string.IsNullOrEmpty(Configuration["EventBus:UserName"]))
+                {
+                    factory.UserName = Configuration["EventBus:UserName"];
+                }  
+                if (!string.IsNullOrEmpty(Configuration["EventBus:Password"]))
+                {
+                    factory.Password = Configuration["EventBus:Password"];
+                }
+                return new RabbitMQConnection(factory);
+            });
+            services.AddSingleton<EventBusRabbitMQProducer>();
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Basket Api", Version = "v1" });
-                //c.AddSecurityDefinition("basic", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-                //{
+                c.AddSecurityDefinition("basic", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
 
-                //    Name="Authorization",
-                //    Type=Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-                //    Scheme="basic",
-                //    In=Microsoft.OpenApi.Models.ParameterLocation.Header,
-                //    Description="Basic Authorization header using the bearer scheme"
-                //});
-                //c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-                //{
-                //    {
-                //        new OpenApiSecurityScheme
-                //        {
-                //            Reference=new OpenApiReference
-                //            {
-                //                Type=ReferenceType.SecurityScheme,
-                //                Id="basic"
-                //            }
-                //        },
-                //        new string[]{}
-                //    }
-                //}); 
+                    Name = "Authorization",
+                    Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+                    Scheme = "basic",
+                    In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                    Description = "Basic Authorization header using the bearer scheme"
+                });
+                c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference=new OpenApiReference
+                            {
+                                Type=ReferenceType.SecurityScheme,
+                                Id="basic"
+                            }
+                        },
+                        new string[]{}
+                    }
+                });
             });
         }
        
