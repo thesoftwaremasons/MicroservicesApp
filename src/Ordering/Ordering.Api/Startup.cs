@@ -1,4 +1,6 @@
 using AutoMapper;
+using EventBusRabbitMQ;
+using EventBusRabbitMQ.Producer;
 using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -9,12 +11,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using Ordering.Api.Extensions;
+using Ordering.Api.RabbitMQ;
 using Ordering.Application.Handlers;
 using Ordering.Core.Entities;
 using Ordering.Core.Entities.Repository.Base;
 using Ordering.Infrastructure.Data;
 using Ordering.Infrastructure.Repositories;
 using Ordering.Infrastructure.Repositories.Base;
+using RabbitMQ.Client;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -38,11 +43,32 @@ namespace Ordering.Api
             services.AddControllers();
             services.AddDbContext<OrderContext>(c =>
                     c.UseSqlServer(Configuration.GetConnectionString("OrderConnection")),ServiceLifetime.Singleton);
+
+            services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+            services.AddScoped<IOrderRepository, OrderRepository>();
+            services.AddTransient<IOrderRepository, OrderRepository>();
+           
+
             services.AddAutoMapper(typeof(Startup));
             services.AddMediatR(typeof(CheckoutOrderHandler).GetTypeInfo().Assembly);
-            services.AddTransient<IOrderRepository, OrderRepository>();
-            services.AddScoped(typeof(IRepository<>),typeof(Repository<>));
-            services.AddScoped<IOrderRepository, OrderRepository>();
+            services.AddSingleton<IRabbitMQConnection>(sp =>
+            {
+                var factory = new ConnectionFactory()
+                {
+                    HostName = Configuration["EventBus:HostName"]
+                };
+                if (!string.IsNullOrEmpty(Configuration["EventBus:UserName"]))
+                {
+                    factory.UserName = Configuration["EventBus:UserName"];
+                }
+                if (!string.IsNullOrEmpty(Configuration["EventBus:Password"]))
+                {
+                    factory.Password = Configuration["EventBus:Password"];
+                }
+                return new RabbitMQConnection(factory);
+            });
+            services.AddSingleton<EventBusRabbitMQConsumer>();
+
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Order Api", Version = "v1" });
@@ -69,7 +95,9 @@ namespace Ordering.Api
                         new string[]{}
                     }
                 });
+               
             });
+            
 
         }
 
@@ -84,11 +112,13 @@ namespace Ordering.Api
             app.UseRouting();
 
             app.UseAuthorization();
-           
+
+
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
-            });
+            }); 
+            app.UseRabbitListener();
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
